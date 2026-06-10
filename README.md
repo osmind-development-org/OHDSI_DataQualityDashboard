@@ -65,6 +65,74 @@ cdm_version | Identifies the CDM version | Enter the numeric portion of the   ve
 cdm_version_concept_id | The Concept Id representing the   version of the CDM. | SELECT concept_id WHERE domain =   Metadata and vocabulary_id = CDM and concept_code like %[numeric portion of   the version]%
 vocabulary_version | The vocabulary version used in   the ETL | Obtained by SELECT   vocabulary_version FROM vocabulary WHERE vocabulary_id = 'None'
 
+Running DQD Against analytics_omop (Osmind)
+============================================
+
+### Prerequisites
+- Java (Eclipse Temurin): `brew install --cask temurin && R CMD javareconf`
+- R packages: `remotes::install_github("OHDSI/DataQualityDashboard")`, `DatabaseConnector`, `SqlRender`
+- JDBC driver: `DatabaseConnector::downloadJdbcDrivers("postgresql", pathToDriver = "~/drivers")`
+
+### Configuration
+Copy `.env.example` to `.env` (or create `.env`) with the following variables:
+```
+DB_HOST="<your-db-host>"
+DB_NAME="<your-db-name>"
+DB_USER="<your-db-user>"
+DB_PASSWORD="<your-db-password>"
+DB_PORT=5432
+DATABASECONNECTOR_JAR_FOLDER=~/drivers
+```
+
+The CDM schema is `analytics_omop`. The `cdm_source` table must exist and have at least one row — if missing, create it:
+```sql
+CREATE TABLE IF NOT EXISTS analytics_omop.cdm_source (
+  cdm_source_name VARCHAR(255) NOT NULL,
+  cdm_source_abbreviation VARCHAR(25),
+  cdm_holder VARCHAR(255),
+  source_description TEXT,
+  source_documentation_reference VARCHAR(255),
+  cdm_etl_reference VARCHAR(255),
+  source_release_date DATE,
+  cdm_release_date DATE,
+  cdm_version VARCHAR(10),
+  cdm_version_concept_id INTEGER,
+  vocabulary_version VARCHAR(20)
+);
+INSERT INTO analytics_omop.cdm_source (
+  cdm_source_name, cdm_source_abbreviation, cdm_holder,
+  source_release_date, cdm_release_date, cdm_version, cdm_version_concept_id, vocabulary_version
+) VALUES ('analytics_omop', 'AOMOP', 'Osmind', CURRENT_DATE, CURRENT_DATE, 'v5.4', 0, 'v5.0');
+```
+
+### Running the checks
+```bash
+cd /Users/adamoldenkamp/Documents/GitHub/OHDSI_DataQualityDashboard
+/usr/local/bin/Rscript R/run_dqd.R
+```
+Results are written to `dqd_results/dqd_results.json` and to the `analytics_omop.dqdashboard_results` table.
+
+Note: `measureValueCompleteness` is excluded from `checkNames` in `R/run_dqd.R` to avoid a duplicate denominator bug with the partial CDM.
+
+### Viewing results in RStudio
+```r
+DataQualityDashboard::viewDqDashboard(
+  jsonPath = "./dqd_results/dqd_results.json"
+)
+```
+
+### Exporting as a shareable standalone HTML file
+Run the export script to bundle everything into a single self-contained HTML file:
+```bash
+python3 scripts/export_dashboard.py
+# Output: dqd_results/dqd_dashboard.html
+```
+Optional arguments:
+```bash
+python3 scripts/export_dashboard.py --json dqd_results/dqd_results.json --out ~/Desktop/dqd_dashboard.html
+```
+The output file has all JS, CSS, and data inlined — no server or R installation needed to view it.
+
 Technology
 ==========
 DataQualityDashboard is an R package 
